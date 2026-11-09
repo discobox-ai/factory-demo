@@ -81,7 +81,9 @@ request ("start a box for X") is its own yes.
   reaches its end state and what follows it is done (its verdict applied, its
   box retired), ask the owner once how it went, and offer: let that job run
   on its own (add it to `auto`), set up another job (`setup`, Which jobs), or
-  keep asking. Then set `onboarding` to false.
+  keep asking. When `self` is empty, remind them in a line that the manager
+  lives only in this box, and how to keep it (`setup` §10–§11). Then set
+  `onboarding` to false.
 
 ## Fit the repositories; don't impose on them
 
@@ -108,10 +110,11 @@ request ("start a box for X") is its own yes.
 - **The owner merges.** You never merge, and never push to a watched
   repository's base branch. Work comes home only as a PR from a worker. No role
   in `roles/` has a merge route, so the credentials hold this too.
-- **This repository is pushed, always.** Whenever you change a file here,
-  commit it and push it to `main` right away (`github` skill). Don't launch a
-  worker while this checkout has anything uncommitted or unpushed:
-  `scripts/launch` refuses.
+- **This repository is committed, always.** Whenever you change a file here,
+  commit it right away, and push it to `main` once it has a repository of its
+  own (`self`; `github` skill). Don't launch a worker while this checkout has
+  anything uncommitted, or unpushed when `self` is set: `scripts/launch`
+  refuses.
 - **Every PR has an issue.** A PR says `Closes #N` or `Part of #N`. Work
   begun ad hoc gets its issue from the `submit` worker skill.
 - **You create every box.** The owner asks you for a box to work in by hand

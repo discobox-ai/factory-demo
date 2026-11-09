@@ -50,8 +50,8 @@ starts nothing.
 | A worker waiting on the owner, its screen still for `workers.pauseAfter` | Stops it (`workers`, Power) | "Answer in the box"; opening it starts it |
 | An event for a sleeping worker's PR or design (review, comment, failing check, a rebase it's due) | Starts it and types one line saying why. Not for a merge | – |
 | A finished worker | Archives it (`discobox rm`) | – |
-| The first worker reaches its end state, `onboarding` true | Finishes what follows it, then asks the owner once how it went: let that job run on its own (`auto`), set up another job, or keep asking. Sets `onboarding` false | The choice |
-| The owner changes the process | Edits this repository (AGENTS.md, a skill, `docs/`, `manager.json`), pushes it, and when repositories or jobs changed, sends `scripts/request` again | Approving a new access request |
+| The first worker reaches its end state, `onboarding` true | Finishes what follows it, then asks the owner once how it went: let that job run on its own (`auto`), set up another job, or keep asking; with `self` empty, reminds them how to keep the manager. Sets `onboarding` false | The choice |
+| The owner changes the process | Edits this repository (AGENTS.md, a skill, `docs/`, `manager.json`), commits it (and pushes it, with `self` set), and when repositories or jobs changed, sends `scripts/request` again | Approving a new access request |
 
 Rank table rows by how much each unblocks downstream (critical path first), then
 by how hard the decision is to reverse (trust roots and stored credentials rank

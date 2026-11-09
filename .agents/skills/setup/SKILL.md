@@ -1,11 +1,11 @@
 ---
 name: setup
-description: Set this manager up for its owner, once, before the first /start — make sure the box can reach the discobox API, ask who it works for and as which GitHub account, which repositories it runs, which of its jobs the owner wants it to manage, how designs are recorded, inspect each repository's labels and adopt them, then write manager.json, ask for the manager's access and hand over to /start. Use when manager.json says "configured": false, the owner types /setup, or the owner wants to add a repository or change which jobs the manager runs.
+description: Set this manager up for its owner, once, before the first /start — make sure the box can reach the discobox API, ask who it works for and as which GitHub account, which repositories it runs, which of its jobs the owner wants it to manage, how designs are recorded, inspect each repository's labels and adopt them, then write manager.json, ask for the manager's access and hand over to /start. Later, give the manager a repository of its own when the owner wants to keep it (§11). Use when manager.json says "configured": false, the owner types /setup, the owner wants to add a repository or change which jobs the manager runs, or the owner has forked or made a repository to keep the manager in.
 ---
 
 # Setup
 
-This repository is a fresh fork of the manager starter template. Only a few
+This checkout is a fresh copy of the manager starter template. Only a few
 things are fixed: an owner who merges, a manager that never writes product
 code, one worker box per job, and status kept in GitHub and on box tags.
 **Everything else is the owner's choice, and you ask about it**: the
@@ -65,18 +65,18 @@ discobox-access list
 
 `origin` is the GitHub repository this box was started from. `upstream` is
 the template's own name (shipped in `manager.json`; nothing is ever pulled
-from it). `self` is the manager's own repository, empty until set up:
+from it). `self` is the manager's own repository, empty until the owner
+gives it one (§11):
 
-- **`self` is empty and `origin` is `upstream`:** the first run, started
-  straight from the template, the usual way. §3 gives the manager a
-  repository of its own.
-- **`self` is empty and `origin` is something else:** the first run, started
-  from the owner's own fork or copy. Confirm with the owner that `origin` is
-  to be the manager's repository; then it's `self`, and §3 creates nothing.
+- **`self` is empty:** the manager lives in this box's checkout, committed
+  locally. That's the usual first run, and nothing needs creating before the
+  owner has seen it work. If `origin` isn't `upstream` (started from the
+  owner's own fork or copy), ask whether it's the manager's repository; if so,
+  it's `self` (§11, from "Once it exists").
 - **`self` is set and `origin` is it:** a re-run. Go on.
 - **`self` is set and `origin` is something else** (a new box started from
   the template again, say): the manager's real settings are in `self`. Ask
-  the owner whether to switch this checkout to it (§3, "Switching"), and do
+  the owner whether to switch this checkout to it (§11, "Switching"), and do
   nothing else until it's settled.
 
 ## 2. Who
@@ -98,74 +98,29 @@ Ask:
 
    Record `github.actor` (`bot`/`owner`) and `github.login`.
 
-## 3. The manager's own repository
+## 3. Where the manager is kept
 
-The manager keeps its settings and skills in a repository of its own, and
-commits and pushes every change to it (`github` skill, Pushing to this
-repository): `manager.json` written here, process changes later. Workers get
-their skills from this checkout, so it must be pushed before any of them
-start. **Started from a fork or copy (§1):** it already exists; `self` is
-`origin`, and only pushing to it is needed (§4, with `CREATE` empty). Skip
-the rest of this step.
-
-Ask where it should live, as `OWNER/NAME` (default: the owner's account or
-org, named after the template), and how:
-
-- **A new private repository** (recommended): created empty, and this
-  checkout pushed to it. Private, because `manager.json` names the
-  repositories it manages and how. No link back to the template.
-- **A fork of the template**: keeps GitHub's link to the template. A fork of
-  a public repository is public.
-- **A repository the owner already made** (empty): just pushed to.
-
-When `github.actor` is `bot`, the bot pushes it from now on: create it under
-the bot's account, or ask the owner to add the bot to it with Write.
-
-Creating it and pushing to it need GitHub access; §4 asks for that together
-with reading the repositories, in one request. Once it's granted:
-
-```sh
-eval "$(discobox-access env)"
-SELF=OWNER/NAME UPSTREAM=$(scripts/config get upstream)
-# One of, as the owner chose:
-gh api -X POST user/repos -f name=NAME -F private=true                  # new, in the owner's account
-gh api -X POST orgs/OWNER/repos -f name=NAME -F private=true            # new, in an org
-gh api -X POST repos/$UPSTREAM/forks -f organization=OWNER -f name=NAME # a fork (drop organization for the owner's account)
-# Then point origin at it and push:
-git remote rename origin upstream
-git remote add origin https://github.com/$SELF
-H='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
-git -c credential.helper= -c credential.helper="$H" push -u origin HEAD:main
-```
-
-A fork takes a few seconds to appear: retry the push for a minute before
-calling it failed. Then write `self` (and `upstream`) into `manager.json`.
-From here on `origin` is the manager's own repository, and every later push
-goes there.
-
-**Switching** (§1, `self` set but `origin` isn't it): with the owner's yes,
-point `origin` at `self`, fetch its `main`, and check it out
-(`git remote rename origin upstream; git remote add origin
-https://github.com/$SELF; git fetch origin main; git checkout -B main
-origin/main`). Local changes: ask before discarding them.
+Nowhere yet, and don't ask. The manager's settings and skills are this
+checkout, committed locally as they change (`github` skill, Keeping this
+repository); workers get their skills copied from it. Keeping it in a
+repository of its own is the owner's to do once they've seen it work: §10
+tells them how, and §11 picks it up when they have.
 
 ## 4. Which repositories
 
-Ask for the repositories, as `OWNER/REPO`. Leave the manager's own (`self`)
-out unless the owner wants its changes to go through issues and PRs too; the
-manager pushes it directly.
+Ask for the repositories, as `OWNER/REPO`. Leave the manager's own (`self`, if it
+has one) out unless the owner wants its changes to go through issues and
+PRs too; the manager pushes it directly.
 
-Then ask for what setup needs, in one request: read the repositories, and
-create and push the manager's own (§3). `CREATE` is `user`, `org:OWNER`,
-`fork` or empty (an existing repository):
+Then ask for what setup needs, in one request: read the repositories (and
+push to `self`, when it's set):
 
 ```sh
-REPOS="acme/web acme/api" SELF=acme/manager CREATE=user scripts/request --setup
+REPOS="acme/web acme/api" scripts/request --setup
 ```
 
 Run it in the background, say in one line that it's waiting for the owner's
-approval, and go on once it's granted (`eval "$(discobox-access env)"`): do
-§3's push first, then read the repositories.
+approval, and go on once it's granted (`eval "$(discobox-access env)"`).
 
 For each repository, read:
 
@@ -290,8 +245,8 @@ Ask:
 ## 9. Write it, and ask for access
 
 Write every answer into `manager.json` (`docs/config.md`), set `name` (ask:
-default "<owner's org> manager"), `self` from `git remote get-url origin`,
-and `"configured": true`. Then:
+default "<owner's org> manager"), and `"configured": true`. Leave `self` as
+§1 found it. Then:
 
 ```sh
 scripts/config check
@@ -314,10 +269,50 @@ and wait.
 ## 10. Commit and hand over
 
 Make sure §0's API is in place. Commit `manager.json` with a message saying
-what was set up, push it to `main` (`github` skill, Pushing to this
-repository), then run the `start` skill in this session.
+what was set up (`github` skill, Keeping this repository; pushed too when
+`self` is set), then run the `start` skill in this session.
 
 Tell the owner, in a few lines: what it watches, which jobs it runs, that
 it will ask before doing anything (and how to answer: "yes", "all", "1 and
 3", "do triage on your own"), and that they talk to it here from now on, and
 change any of it by asking.
+
+When `self` is empty, add one short paragraph, and don't ask anything about
+it: its setup is committed only in this box, so removing the box loses it.
+To keep it, once they've seen it work, they fork `upstream` on GitHub (a fork
+of a public repository is public), or make an empty private repository, and
+tell you its name; you take it from there (§11). Nothing is needed before
+then.
+
+## 11. Later: a repository of its own
+
+When the owner says where to keep the manager (they forked `upstream`, or
+made an empty repository), as `OWNER/NAME`. Don't create it yourself.
+
+**Once it exists:** write it to `self` in `manager.json` and send
+`scripts/request` (background, keep its ID): the manager's access now
+includes `github-push` for it. Say in one line what the owner is approving.
+Commit that change. Once it's granted, point `origin` at it (unless it
+already is: a box started from the owner's own fork) and push this checkout:
+
+```sh
+eval "$(discobox-access env)"
+SELF=$(scripts/config get self)
+git remote rename origin upstream
+git remote add origin https://github.com/$SELF
+H='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+git -c credential.helper= -c credential.helper="$H" fetch origin
+```
+
+A fork has the template's history, which this checkout shares: push with
+`git -c credential.helper= -c credential.helper="$H" push -u origin HEAD:main`.
+A fork the owner has changed on GitHub since, or a repository that isn't
+empty: rebase onto `origin/main` first, and ask before discarding anything.
+A fork takes a few seconds to appear: retry the fetch for a minute before
+calling it failed. From here on every change is pushed (`github` skill).
+
+**Switching** (§1, `self` set but `origin` isn't it): with the owner's yes,
+point `origin` at `self`, fetch its `main`, and check it out
+(`git remote rename origin upstream; git remote add origin
+https://github.com/$SELF; git fetch origin main; git checkout -B main
+origin/main`). Local changes: ask before discarding them.

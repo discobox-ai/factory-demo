@@ -2,7 +2,7 @@
 
 Every worker discobox gets these, installed by the manager with
 `discobox run --skills "$PWD/worker-skills"` (`scripts/launch`), copied from
-the manager's checkout of the pushed `main`. A worker does one
+the manager's committed checkout. A worker does one
 job and ends in a defined state. The manager reads that state; nobody has to
 read the worker's terminal to know where it stands.
 

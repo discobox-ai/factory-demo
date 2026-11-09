@@ -73,7 +73,6 @@ case ${1:-} in
     jq -e '.configured == true' $F >/dev/null || die "manager.json is not configured yet: run /setup"
     jq -r '
       def need($v; $m): if ($v // "") == "" then $m else empty end;
-      need(.self; "self is empty"),
       need(.github.login; "github.login is empty"),
       (if (.repos | length) == 0 then "no repos" else empty end),
       (.repos[] | need(.base; "\(.name): no base"), (if (.push | IN("fork", "branch")) then empty else "\(.name): push must be fork or branch" end)),

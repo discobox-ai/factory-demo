@@ -10,11 +10,13 @@ It fits how your repositories already work: it adopts the labels you have
 (and creates none), writes designs the way your team does (an ADR, an RFC, a
 comment on the issue, or not at all), and runs only the jobs you ask it to.
 
-This is a starter, not a framework. Start it from here; on its first run it
-makes itself a repository of your own (a new private repository, or a fork)
+This is a starter, not a framework. Start it from here and try it: its
+settings and skills live in the box's checkout, committed as they change, so
+nothing needs creating first. Once you want to keep it, fork this repository
+(or make an empty private one) and tell it the name; it pushes itself there,
 and from then on it's yours: when you change how you want it to work, tell
-it, and it edits its own skills there and pushes them. There is no upstream
-to pull from.
+it, and it edits its own skills and pushes them. There is no upstream to
+pull from.
 
 ## What's here
 
@@ -37,10 +39,10 @@ to pull from.
      https://github.com/discobox-ai/factory@main -p '/setup'
    ```
 
-   `/setup` first asks where the manager's own repository should live, and
-   creates it (or forks this one, or uses one you made). Already forked it?
-   Start from your fork instead; `/setup` uses it as is. Either way, start
-   from your repository next time.
+   Nothing to fork or create first: the manager keeps its settings in the
+   box. When it's set up, it tells you how to keep it (fork this repository
+   and tell it the name). Already forked it? Start from your fork instead;
+   `/setup` uses it as is.
 
    `--discobox-api` lets it create, steer and tag its workers (only boxes it
    creates). Forgot it? `/setup` notices and asks for it; approve the request

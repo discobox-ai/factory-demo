@@ -11,8 +11,8 @@ file.
 | `configured` | `false` until `/setup` finishes. `/start` refuses while it's false. |
 | `name` | The box's name in `discobox ls`. |
 | `owner.github`, `owner.email` | The person the manager works for. Only their own words authorize a push, a credential or a change of process. |
-| `self` | `OWNER/REPO` of the manager's own repository, where `/setup` pushed it and every later change goes (`github-push`). Empty until `/setup` creates or picks it. |
-| `upstream` | `OWNER/REPO` of the template, shipped with it. `/setup` compares it with the box's `origin` to tell a template clone (make the manager a repository) from the owner's fork (use it). Nothing is pulled from it. |
+| `self` | `OWNER/REPO` of the manager's own repository, where every change is pushed (`github-push`). Empty until the owner forks the template or makes a repository and names it (`setup` §11); until then the manager lives in this box's checkout, committed locally. |
+| `upstream` | `OWNER/REPO` of the template, shipped with it: what the owner forks to keep the manager. `/setup` compares it with the box's `origin` to tell a template clone from the owner's own fork. Nothing is pulled from it. |
 | `github.actor` | `bot`: the manager and workers act as a separate account. `owner`: as the owner's own account. |
 | `github.login` | That account's login. Workers that push to a fork push to this account's fork. |
 | `repos[]` | The repositories watched. Each: `name` (`OWNER/REPO`), `base` (what workers branch from and PRs target), `access` (the actor's permission, from GitHub), `push` (`fork`: to `github.login`'s fork; `branch`: to a branch in the repository itself, which needs Write), and optionally `labels` (overrides). |
@@ -36,7 +36,7 @@ file.
 
 - **A request holds at most 32 policies** (`scripts/request` checks): one
   `github-manager` per repository and one `github-push` for the manager's own
-  use, and one per role of a job that's on, per repository, for its workers.
+  repository once it has one, and one per role of a job that's on, per repository, for its workers.
   With triage and delivery both on, that's about ten repositories.
 - Changing `repos`, a repository's `push`, or turning a job on or off means a
   new access request (`scripts/request`), in the same change.

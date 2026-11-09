@@ -88,15 +88,19 @@ Go on with §2–§3 meanwhile; start no worker (§7) until it's approved.
 
 ## 2. This repository
 
-`origin` must be the manager's own repository (`git remote get-url origin`
-is `scripts/config get self`). If it isn't, this box was started from
-somewhere else (the template, most likely): stop, and run `setup` §1, which
-offers to switch to it.
-
-`git status` clean, and `HEAD` equal to `main` on GitHub (`github` skill,
-Pushing to this repository). Pull if GitHub is ahead. Workers install
-their skills from the pushed `main`. Uncommitted changes you didn't make:
+`git status` clean (`github` skill, Keeping this repository): workers get
+their skills copied from this checkout. Uncommitted changes you didn't make:
 ask the owner before committing them.
+
+When `self` is set, `origin` must be it (`git remote get-url origin` is
+`https://github.com/` plus `scripts/config get self`). If it isn't, this box
+was started from somewhere else (the template, most likely): stop, and run
+`setup` §1, which offers to switch to it. Then `HEAD` equals `main` on
+GitHub; pull if GitHub is ahead.
+
+When `self` is empty, the manager lives only in this checkout. Don't raise
+it again here: `setup` §10 told the owner, and the first round offers it
+once more (`AGENTS.md`, Ask first).
 
 ## 3. The side pane
 

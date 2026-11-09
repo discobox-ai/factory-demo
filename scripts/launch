@@ -22,8 +22,9 @@
 # GitHub secret. It then runs the box, tags it, and moves the issue to
 # inProgress (scripts/status; deliver and design jobs).
 #
-# It refuses to launch when this checkout is dirty or not pushed (the box installs
-# its skills from the pushed main), or when workers.paused is true.
+# It refuses to launch when this checkout has uncommitted changes (the box gets
+# its skills copied from it), when it has a repository of its own (self) and
+# isn't pushed to it, or when workers.paused is true.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -110,15 +111,17 @@ HELPER='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
 export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
   GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1="$HELPER"
 
-# --- this checkout must be pushed -------------------------------------------
-[ -z "$(git status --porcelain)" ] || die "this checkout has uncommitted changes: commit and push first (workers install skills from the pushed main)"
-git fetch -q origin main
-[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "HEAD is not origin/main: push (or pull) first ($SELF)"
+# --- this checkout must be committed, and pushed once it has a repository ----
+[ -z "$(git status --porcelain)" ] || die "this checkout has uncommitted changes: commit first (workers get their skills copied from it)"
+if [ -n "$SELF" ]; then
+  git fetch -q origin main
+  [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "HEAD is not origin/main: push (or pull) first ($SELF)"
+fi
 
 BIND="$GH_SECRET:GH_TOKEN,policy=roles/$ROLE.json,owner=$OWNER,repo=$NAME${PUSHES:+,forkOwner=$FORK}"
 SRC="https://github.com/$REPO@$BRANCH"
-# Skills go in as a local directory, copied from this checkout (equal to the pushed
-# main, checked above). Given as OWNER/REPO//worker-skills, the pool fetches a
+# Skills go in as a local directory, copied from this checkout (committed, and
+# equal to the pushed main when there is one, checked above). Given as OWNER/REPO//worker-skills, the pool fetches a
 # private repository itself, and from inside a box the CLI never lends it Git
 # credentials: the box waits for its source forever.
 ARGS=(run -d -H "$HARNESS" --skills "$PWD/worker-skills")

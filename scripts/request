@@ -7,10 +7,12 @@
 #   scripts/request --print         print the request JSON, send nothing
 #   scripts/request                 send it and wait for the owner
 #   scripts/request --setup         what /setup needs before the manager is
-#                                   configured: read REPOS ("a/b c/d"), and create
-#                                   (CREATE: user, org:OWNER, fork, or empty for a
-#                                   repository that exists) and push SELF, the
-#                                   manager's own repository
+#                                   configured: read REPOS ("a/b c/d"), and, once
+#                                   it has one, push SELF, the manager's own
+#                                   repository
+#
+# SELF (manager.json self) is empty until the owner gives the manager a
+# repository of its own; until then nothing is pushed, and nothing asks to.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 die() { echo "request: $*" >&2; exit 1; }
@@ -19,28 +21,20 @@ MODE=${1:-send}
 if [ "$MODE" = --setup ]; then
   repos=${REPOS:-$(scripts/config repos)}
   SELF=${SELF:-$(scripts/config get self)}
-  UPSTREAM=$(scripts/config get upstream)
   [ -n "$repos" ] || die "no repositories: set REPOS"
-  [ -n "$SELF" ] || die "no manager repository: set SELF"
   routes=$(for r in $repos; do
     printf '"GET api.github.com/repos/%s,/repos/%s/**"\n' "$r" "$r"
     printf '"GET,POST github.com/%s.git/info/refs,/%s.git/git-upload-pack"\n' "$r" "$r"
   done
   echo '"api.github.com/graphql graphql=query"'
   echo '"GET api.github.com/user,/search/issues"'
-  printf '"GET api.github.com/repos/%s,/repos/%s/**"\n' "$SELF" "$SELF"
-  printf '"github.com/%s.git/**"\n' "$SELF"
-  case ${CREATE:-} in
-    user) echo '"POST api.github.com/user/repos"' ;;
-    org:*) printf '"POST api.github.com/orgs/%s/repos"\n' "${CREATE#org:}" ;;
-    fork) [ -n "$UPSTREAM" ] || die "CREATE=fork needs upstream in manager.json"
-          printf '"POST api.github.com/repos/%s/forks"\n' "$UPSTREAM" ;;
-    "") ;;
-    *) die "CREATE is user, org:OWNER, fork or empty" ;;
-  esac)
-  jq -n --argjson routes "[$(echo "$routes" | paste -sd,)]" --arg who "$(echo $repos | sed 's/ /, /g')" --arg self "$SELF" --arg c "${CREATE:-}" '{
+  if [ -n "$SELF" ]; then
+    printf '"GET api.github.com/repos/%s,/repos/%s/**"\n' "$SELF" "$SELF"
+    printf '"github.com/%s.git/**"\n' "$SELF"
+  fi)
+  jq -n --argjson routes "[$(echo "$routes" | paste -sd,)]" --arg who "$(echo $repos | sed 's/ /, /g')" --arg self "$SELF" '{
     name: "github", envVar: "GH_TOKEN", routes: $routes, grantTTLSeconds: 14400, wait: true,
-    justification: "Set up the manager: \(if $c != "" then "create \($self) and " else "" end)push its settings to \($self); read \($who | gsub("\n"; ", ")) (their labels, issues and permissions), read-only."}' |
+    justification: "Set up the manager: \(if $self != "" then "push its settings to \($self); " else "" end)read \($who | gsub("\n"; ", ")) (their labels, issues and permissions), read-only."}' |
     if [ -n "${PRINT:-}" ]; then cat; else discobox-access request --json; fi
   exit
 fi
@@ -72,16 +66,16 @@ for repo in $(scripts/config repos); do
     else delegate+=("$(pol "$role" "$o" "$n")"); fi
   done
 done
-use+=("$(pol github-push "${SELF%%/*}" "${SELF#*/}")")
+[ -z "$SELF" ] || use+=("$(pol github-push "${SELF%%/*}" "${SELF#*/}")")
 
 total=$(( ${#use[@]} + ${#delegate[@]} ))
 [ "$total" -le 32 ] || die "$total policies: a request holds at most 32. Watch fewer repositories, or turn off jobs whose role nothing else uses"
 
 REQ=$(jq -n --argjson use "[$(IFS=,; echo "${use[*]}")]" --argjson del "[$(IFS=,; echo "${delegate[*]}")]" \
   --arg who "$(scripts/config repos | paste -sd, | sed 's/,/, /g')" --arg login "$LOGIN" \
-  --arg roles "$(echo $ROLES | sed 's/ /, /g')" '{
+  --arg roles "$(echo $ROLES | sed 's/ /, /g')" --arg self "$SELF" '{
   name: "github", envVar: "GH_TOKEN", policies: $use, delegate: {policies: $del}, wait: true,
-  justification: "The manager, acting as \($login): watch, label and comment on \($who) and push its own repository; hand its workers their roles (\($roles)) in each. No merge."}')
+  justification: "The manager, acting as \($login): watch, label and comment on \($who)\(if $self != "" then " and push its own repository, \($self)" else "" end); hand its workers their roles (\($roles)) in each. No merge."}')
 
 if [ "$MODE" = --print ]; then echo "$REQ"; exit; fi
 echo "$REQ" | discobox-access request --json

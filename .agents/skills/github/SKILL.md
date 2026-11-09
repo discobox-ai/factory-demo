@@ -1,6 +1,6 @@
 ---
 name: github
-description: How the manager reads and changes GitHub — issues, statuses and labels, PR state and checks, closing delivered issues, and pushing to this repository. Use for any gh call, status or label change, issue filing or close.
+description: How the manager reads and changes GitHub — issues, statuses and labels, PR state and checks, closing delivered issues, and committing (and pushing) this repository. Use for any gh call, status or label change, issue filing or close.
 ---
 
 # GitHub
@@ -169,12 +169,16 @@ gh api -X PATCH repos/<repo>/issues/<N> -f state=closed -f state_reason=complete
   `Closes`, `Fixes` or `Resolves #N`, or `Part of #N`, and that issue exists
   in the repository.
 
-## Pushing to this repository
+## Keeping this repository
 
-Every change to this repository (`scripts/config get self`) is committed and
-pushed to `main` as soon as it's made; that go-ahead is standing. Workers install
-their skills from the pushed `main`, so nothing here may stay local. One
-commit per change, rebased on the remote first:
+Every change to this checkout is committed as soon as it's made, one commit
+per change; that go-ahead is standing. Workers get their skills copied from
+it, so nothing here may stay uncommitted.
+
+Until the owner gives the manager a repository of its own (`self` empty,
+`setup` §11), committing is all: the manager lives in this box. Once `self`
+is set, every commit is pushed to its `main` too, rebased on the remote
+first:
 
 ```sh
 SELF=https://github.com/$(scripts/config get self).git
@@ -184,8 +188,8 @@ git rebase FETCH_HEAD
 git -c credential.helper= -c credential.helper="$H" push "$SELF" HEAD:main
 ```
 
-Then check nothing is left: `git status --porcelain` is empty and `HEAD`
-equals the remote `main` (`git ls-remote "$SELF" main`).
+Then check nothing is left: `git status --porcelain` is empty and, with
+`self` set, `HEAD` equals the remote `main` (`git ls-remote "$SELF" main`).
 
 Changes to the watched repositories never go this way: only a worker's PR
 does.

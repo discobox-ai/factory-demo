@@ -18,7 +18,7 @@ eval "$(discobox-access env)"   # GH_TOKEN
 **Use `scripts/launch`.** It reads the harness, the fork and the base branch
 from `manager.json` (`scripts/config`), the role from the worker skill, and
 the one delegated GitHub secret; refuses a job that's off (`scripts/config jobs`),
-and while this checkout is dirty or unpushed or `workers.paused` is true;
+and while this checkout is dirty, unpushed (once it has `self`) or `workers.paused` is true;
 runs the box; tags it; moves a deliver or design issue to `inProgress`
 (`scripts/status set`).
 Never type `-H <harness>` or the rest of the command by hand: a hand-typed
@@ -42,9 +42,9 @@ scripts/launch ... --dry-run     # print the harness, role and command, launch n
 Then add the table row (`scripts/table add`). What follows is what the script
 does, for reading and for launches by hand.
 
-First make sure this checkout is committed and pushed (`github` skill, Pushing
-to this repository): `--skills` installs from the pushed `main`, not from
-local files.
+First make sure this checkout is committed, and pushed once it has `self`
+(`github` skill, Keeping this repository): `--skills` copies the worker
+skills from it, so a worker gets exactly what's committed.
 
 **The GitHub secret's name is whatever the owner bound you**, not
 necessarily `github`: the owner picks the secret when approving your request.

@@ -22,12 +22,14 @@ pull from.
 
 - `AGENTS.md` (also `CLAUDE.md`): the manager itself.
 - `manager.json`: your settings, written by `/setup` (`docs/config.md`).
-- `.agents/skills/`: the manager's skills (`setup`, `start`,
+- `.agents/skills/`: the manager's skills (`setup`, `sample`, `start`,
   `watch`, `workers`, `table`, `github`, `triage-intake`, `adopt`).
 - `worker-skills/`: what each worker gets, one skill per job.
 - `roles/`: the GitHub credential policy each kind of box is bound
   (`roles/README.md`). No role can merge.
-- `scripts/`: `config`, `status`, `request`, `launch`, `table`.
+- `scripts/`: `config`, `status`, `request`, `launch`, `table`, `sample`.
+- `sample/`: the sample run: a ready-made `manager.json` and a small buggy
+  app (`sample/app`) for it to work on.
 - `docs/`: gates (what it does alone, what comes to you), labels, state.
 
 ## Start it
@@ -48,7 +50,13 @@ pull from.
    creates). Forgot it? `/setup` notices and asks for it; approve the request
    in your approvals. `--no-project-skills` keeps other skill repositories in your
    project from loading beside its own.
-2. Open the box. `/setup` asks which repositories it runs, which GitHub
+2. Open the box. `/setup` first offers a **sample run**: it creates one
+   small private repository in your account with a buggy one-page app in it,
+   asks you to describe a bug in your own words, and you watch it go from an
+   issue through a triage worker to a delivery worker's PR, with before and
+   after screenshots of the fix. One approval, a few minutes, nothing of
+   yours touched. Afterwards (or instead), it sets up the real thing.
+3. For the real thing, `/setup` asks which repositories it runs, which GitHub
    account it acts as (a bot account is best), which jobs you want it to
    manage (each one separately), how your team writes designs, and how your
    existing labels map onto its statuses (a status with no label is kept in a

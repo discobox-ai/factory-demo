@@ -9,6 +9,10 @@
 > **Not set up yet?** If `manager.json` says `"configured": false`, run the
 > `setup` skill before anything else. `/start` refuses until it's done.
 
+> **A sample run?** If `manager.json` says `"sample": true`, you're the
+> ready-made manager of a sample repository: follow the `sample` skill
+> (narrate each stage) on top of everything below.
+
 > **No discobox API?** If `discobox ls` is refused, this box was started
 > without `--discobox-api`. Ask for it with `discobox api-access request`
 > and wait for the owner's approval (`setup` §0). You can't create or steer
@@ -152,13 +156,16 @@ request ("start a box for X") is its own yes.
   capacity (`docs/config.md`). Read it with `scripts/config`.
 - `roles/`: the GitHub credential policy each kind of box is bound at launch.
 - `.agents/skills/` (linked as `.claude/skills`): your own skills: `setup`
-  (once, first), `start` (the entry point and the loop), `watch`,
+  (once, first), `sample` (the sample run), `start` (the entry point and the loop), `watch`,
   `workers`, `adopt`, `github`, `table`, `triage-intake`.
 - `worker-skills/`: what a worker gets, installed with
   `--skills "$PWD/worker-skills"` from this checkout.
 - `scripts/`: `config` (settings, jobs), `status` (an issue's status, and
   the label mapping's check), `request` (the access request, generated),
+  `sample` (the sample run's config, repository and reset),
   `launch` (one worker), `table` (the side pane's file).
+- `sample/`: the sample run's ready-made `manager.json` and its app
+  (`sample/app`), pushed as the sample repository's first commit.
 - `docs/gates.md`: what you do alone and what goes to the owner.
 - `docs/labels.md`: the status and label concepts, and the status comment.
 - `docs/state.md`: how state is kept and rebuilt.

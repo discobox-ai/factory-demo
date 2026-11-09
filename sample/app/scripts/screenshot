@@ -1,0 +1,19 @@
+#!/bin/sh
+# Screenshot the page in headless Chromium, as a reviewer would see it.
+#
+#   scripts/screenshot OUT.png [QUERY]
+#
+# QUERY sets the starting state, e.g. 'bill=50&tip=18&people=3'.
+set -eu
+[ $# -ge 1 ] || { echo "usage: scripts/screenshot OUT.png [QUERY]" >&2; exit 2; }
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+out=$1
+query=${2:-}
+mkdir -p "$(dirname -- "$out")"
+out=$(CDPATH='' cd -- "$(dirname -- "$out")" && pwd)/$(basename -- "$out")
+command -v chromium >/dev/null || { echo "screenshot: chromium is not installed (it is a discobox feature; it may still be installing)" >&2; exit 1; }
+chromium --headless --no-sandbox --disable-gpu --hide-scrollbars \
+  --window-size=480,640 --screenshot="$out" \
+  "file://$root/index.html${query:+?$query}" 2>/dev/null
+[ -s "$out" ] || { echo "screenshot: chromium wrote nothing" >&2; exit 1; }
+echo "$out"

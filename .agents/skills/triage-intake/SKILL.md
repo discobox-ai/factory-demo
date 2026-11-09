@@ -53,7 +53,8 @@ status with `scripts/status get|set`, and read any other concept's label with
 ## The owner asks for something in conversation
 
 - If it's a change to a watched repository, **file an issue** (Today /
-  Wanted / Done when), then treat it as `ready` (the owner asked):
+  Wanted / Done when), then treat it as `ready` (the owner asked; in a
+  sample run, `sample` true, leave it `new` so it's triaged, `sample` §7):
   `scripts/status set <repo> <N> ready`, and with the `deliver` job on,
   start the worker (`propose-design` first when the `design` job is on and
   the issue needs a design), by priority when slots are short. With it off,

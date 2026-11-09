@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "description": "Sample run only: create the sample repository in the owner's account, and its labels. GitHub's API can't narrow repository creation to one name; the sample skill creates only the one named here.",
+  "parameters": {
+    "owner": {
+      "type": "pathSegment"
+    },
+    "repo": {
+      "type": "pathSegment"
+    }
+  },
+  "routes": [
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "paths": [
+        "/user/repos"
+      ]
+    },
+    {
+      "hosts": [
+        "api.github.com"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "paths": [
+        "/repos/${owner}/${repo}/labels"
+      ]
+    }
+  ]
+}

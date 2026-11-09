@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# The sample run (the `sample` skill): a ready-made manager for one small,
+# private repository it creates in the owner's account and seeds with a buggy
+# app (sample/app).
+#
+#   scripts/sample config OWNER REPO [EMAIL]   write manager.json from
+#                                              sample/manager.json
+#   scripts/sample seed                        create the repository (if it
+#                                              isn't there), its labels, and
+#                                              push sample/app as its main
+#   scripts/sample reset                       put back the manager.json from
+#                                              before the sample run, keeping
+#                                              owner and github, for setup
+#
+# `seed` needs the access `scripts/request` asks for in a sample run
+# (github-sample-seed and github-push for the repository); run
+# `eval "$(discobox-access env)"` first.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+die() { echo "sample: $*" >&2; exit 1; }
+
+# Labels the sample's manager.json maps, created in the sample repository
+# alone: in the owner's own repositories the manager never creates a label.
+LABELS='[
+  {"name": "P1", "color": "b60205", "description": "Broken for everyone, or wrong money: fix first"},
+  {"name": "P2", "color": "d93f0b", "description": "A bug with a workaround, or a wanted improvement"},
+  {"name": "P3", "color": "fbca04", "description": "Polish and nice-to-haves"},
+  {"name": "triaged", "color": "c5def5", "description": "Scoped, waiting for a slot"},
+  {"name": "needs decision", "color": "d876e3", "description": "The owner decides before work starts"},
+  {"name": "needs input", "color": "d876e3", "description": "A worker is waiting on the owner"},
+  {"name": "ready", "color": "0e8a16", "description": "The next free worker takes it"},
+  {"name": "in progress", "color": "1d76db", "description": "A worker is on it"},
+  {"name": "in review", "color": "5319e7", "description": "Its PR is green, waiting for the owner"},
+  {"name": "blocked", "color": "000000", "description": "Waiting on something, named in a comment"}
+]'
+
+case ${1:-} in
+config)
+  OWNER=${2:?usage: scripts/sample config OWNER REPO [EMAIL]}
+  REPO=${3:?usage: scripts/sample config OWNER REPO [EMAIL]}
+  EMAIL=${4:-}
+  if jq -e '.configured == true and (.sample // false) == false' manager.json >/dev/null; then
+    die "manager.json holds a real setup; a sample run would replace it"
+  fi
+  jq --arg owner "$OWNER" --arg repo "$OWNER/$REPO" --arg email "$EMAIL" \
+    --arg before "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg upstream "$(jq -r .upstream manager.json)" '
+    .owner = {github: $owner, email: $email}
+    | .github.login = $owner
+    | .repos[0].name = $repo
+    | .backlog.before = $before
+    | .upstream = $upstream' sample/manager.json >manager.json.new
+  mv manager.json.new manager.json
+  scripts/config check
+  ;;
+seed)
+  [ "$(scripts/config get sample)" = true ] || die "manager.json is not a sample run (scripts/sample config first)"
+  REPO=$(scripts/config repos | head -n1)
+  OWNER=${REPO%%/*} NAME=${REPO#*/}
+  [ -n "${GH_TOKEN:-}" ] || die "no GH_TOKEN: eval \"\$(discobox-access env)\" first"
+
+  # The repository: created private in the owner's account when it isn't
+  # there; one that is must be empty, or already this sample.
+  if ! gh api "repos/$REPO" --jq .full_name >/dev/null 2>&1; then
+    gh api -X POST user/repos -f name="$NAME" -F private=true \
+      -f description="Tip Split: a sample to watch the factory triage and fix an issue" \
+      --jq .full_name >/dev/null || die "could not create $REPO"
+    echo "created $REPO (private)"
+    for _ in $(seq 1 30); do gh api "repos/$REPO" --jq .id >/dev/null 2>&1 && break; sleep 1; done
+  fi
+  actual=$(gh api "repos/$REPO" --jq .owner.login)
+  [ "$actual" = "$OWNER" ] || die "$REPO belongs to $actual, not $OWNER"
+
+  # Labels: one already there is left as it is.
+  echo "$LABELS" | jq -c '.[]' | while read -r label; do
+    if ! out=$(printf '%s' "$label" | gh api -X POST "repos/$REPO/labels" --input - 2>&1); then
+      case $out in *already_exists*) ;; *) die "label $(printf '%s' "$label" | jq -r .name): $out" ;; esac
+    fi
+  done
+  echo "labels in place"
+
+  # The app, as main's first commit. A main that already has it is left.
+  if gh api "repos/$REPO/contents/tip.js" --jq .name >/dev/null 2>&1; then
+    echo "$REPO already has the sample app"
+    exit 0
+  fi
+  if gh api "repos/$REPO/commits?per_page=1" --jq '.[0].sha' >/dev/null 2>&1; then
+    die "$REPO has commits but not the sample app; name an empty repository or a new name"
+  fi
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  cp -a sample/app/. "$tmp/"
+  name=$(git config user.name || echo "$OWNER")
+  email=$(scripts/config get owner.email)
+  [ -n "$email" ] || email=$(git config user.email || echo "$OWNER@users.noreply.github.com")
+  # shellcheck disable=SC2016 # expanded by git, not here
+  H='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+  (
+    cd "$tmp"
+    git init -q -b main
+    git add -A
+    git -c user.name="$name" -c user.email="$email" commit -q -m "Tip Split: a sample app for the factory"
+    git -c credential.helper= -c credential.helper="$H" push -q "https://github.com/$REPO.git" HEAD:main
+  ) || die "could not push the sample app to $REPO"
+  echo "pushed the sample app to $REPO"
+  ;;
+reset)
+  [ "$(scripts/config get sample)" = true ] || die "manager.json is not a sample run"
+  # The manager.json from before the first commit that made it a sample run;
+  # with none committed yet, the committed one.
+  first=$(git log --reverse --format=%H -G'"sample": true' -- manager.json | head -n1)
+  rev=HEAD
+  [ -z "$first" ] || rev="$first^"
+  before=$(git show "$rev:manager.json") || die "no manager.json from before the sample run in git"
+  printf '%s' "$before" | jq -e '(.sample // false) == false' >/dev/null || die "the manager.json before the sample run is a sample run too"
+  printf '%s' "$before" | jq --argjson now "$(cat manager.json)" '.owner = $now.owner | .github = $now.github' >manager.json.new
+  mv manager.json.new manager.json
+  echo "manager.json is back to before the sample run (owner and github kept)"
+  ;;
+*)
+  die "usage: scripts/sample config OWNER REPO [EMAIL] | seed | reset"
+  ;;
+esac

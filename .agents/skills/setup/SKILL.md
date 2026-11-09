@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Set this manager up for its owner, once, before the first /start — make sure the box can reach the discobox API, ask who it works for and as which GitHub account, which repositories it runs, which of its jobs the owner wants it to manage, how designs are recorded, inspect each repository's labels and adopt them, then write manager.json, ask for the manager's access and hand over to /start. Later, give the manager a repository of its own when the owner wants to keep it (§11). Use when manager.json says "configured": false, the owner types /setup, the owner wants to add a repository or change which jobs the manager runs, or the owner has forked or made a repository to keep the manager in.
+description: Set this manager up for its owner, once, before the first /start — make sure the box can reach the discobox API, ask who it works for and as which GitHub account, which repositories it runs, which of its jobs the owner wants it to manage, how designs are recorded, inspect each repository's labels and adopt them, then write manager.json, ask for the manager's access and hand over to /start. First offers a sample run (the `sample` skill) instead. Later, give the manager a repository of its own when the owner wants to keep it (§11). Use when manager.json says "configured": false, the owner types /setup, the owner wants to add a repository or change which jobs the manager runs, or the owner has forked or made a repository to keep the manager in.
 ---
 
 # Setup
@@ -53,7 +53,33 @@ Say in one line that it's waiting in their approvals. `API access enabled`
 manager can't start workers without it, and stop at §10 until they approve
 a new request.
 
-Go on to §1 meanwhile; nothing before §10 needs the API.
+Go on meanwhile; nothing before §10 needs the API.
+
+## A sample run first?
+
+```sh
+jq '{configured, sample}' manager.json
+```
+
+- **`configured` false** (a first run): ask whether to **try a sample run
+  first** (recommended) or **set it up for their repositories now**. The
+  sample run creates one small private repository in their account with a
+  buggy app in it, and they watch one bug they describe go from an issue
+  through triage to a PR with screenshots of the fix, in a few minutes and
+  with one approval; their real setup comes after, from where it leaves
+  off. Sample: run the `sample` skill, and stop here. Their repositories: go
+  on to §1.
+- **`sample` true** (they've done the sample run and want the real thing):
+  put back the template's settings, keeping their login, and go on to §1.
+  Disable the sample repository's two monitors (`watch`); the repository
+  itself stays in their account.
+
+  ```sh
+  scripts/sample reset
+  git add manager.json && git commit -m "Leave the sample run for a real setup"
+  ```
+
+- **`configured` true, not a sample:** a re-run. Go on to §1.
 
 ## 1. Where you are
 

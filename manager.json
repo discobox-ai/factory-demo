@@ -66,5 +66,6 @@
   },
   "disk": {
     "minFreeGiB": 30
-  }
+  },
+  "sample": false
 }

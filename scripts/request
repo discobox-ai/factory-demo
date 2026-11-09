@@ -67,15 +67,22 @@ for repo in $(scripts/config repos); do
   done
 done
 [ -z "$SELF" ] || use+=("$(pol github-push "${SELF%%/*}" "${SELF#*/}")")
+# A sample run (sample skill) also creates its one repository, its labels and
+# its first commit.
+SAMPLE=$(scripts/config get sample)
+if [ "$SAMPLE" = true ]; then
+  repo=$(scripts/config repos | head -n1)
+  use+=("$(pol github-sample-seed "${repo%%/*}" "${repo#*/}")" "$(pol github-push "${repo%%/*}" "${repo#*/}")")
+fi
 
 total=$(( ${#use[@]} + ${#delegate[@]} ))
 [ "$total" -le 32 ] || die "$total policies: a request holds at most 32. Watch fewer repositories, or turn off jobs whose role nothing else uses"
 
 REQ=$(jq -n --argjson use "[$(IFS=,; echo "${use[*]}")]" --argjson del "[$(IFS=,; echo "${delegate[*]}")]" \
   --arg who "$(scripts/config repos | paste -sd, | sed 's/,/, /g')" --arg login "$LOGIN" \
-  --arg roles "$(echo $ROLES | sed 's/ /, /g')" --arg self "$SELF" '{
+  --arg roles "$(echo $ROLES | sed 's/ /, /g')" --arg self "$SELF" --arg sample "$SAMPLE" '{
   name: "github", envVar: "GH_TOKEN", policies: $use, delegate: {policies: $del}, wait: true,
-  justification: "The manager, acting as \($login): watch, label and comment on \($who)\(if $self != "" then " and push its own repository, \($self)" else "" end); hand its workers their roles (\($roles)) in each. No merge."}')
+  justification: "\(if $sample == "true" then "A sample run: create \($who) (private, in your account), its labels and its first commit. " else "" end)The manager, acting as \($login): watch, label and comment on \($who)\(if $self != "" then " and push its own repository, \($self)" else "" end); hand its workers their roles (\($roles)) in each. No merge."}')
 
 if [ "$MODE" = --print ]; then echo "$REQ"; exit; fi
 echo "$REQ" | discobox-access request --json

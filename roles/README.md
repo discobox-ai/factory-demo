@@ -15,7 +15,8 @@ skills are the source.
 | `github-triage` | `triage-issue` workers | Read the repository and search issues; comment on issues; file issues |
 | `github-deliver` | `deliver-issue`, `propose-design`, `fix-ci`, `rebase-pr` workers, and ad-hoc and prototype boxes (`submit`) | Triage's, plus git push and fetch to the repository and `forkOwner`'s fork; open and edit its PR; reply to review; mark ready; file issues |
 | `github-manager` | The manager itself, once per watched repository | Read; file, comment on, label and close issues; edit its own status comment; re-run failed CI. No git, no PRs, no creating labels |
-| `github-push` | The manager itself, for this repository (`self`) only, once it has one | Git fetch and push |
+| `github-push` | The manager itself, for this repository (`self`) only, once it has one; in a sample run, also the sample repository, for its first commit | Git fetch and push |
+| `github-sample-seed` | The manager itself, in a sample run only, for the sample repository | Create a repository in the owner's account; create that repository's labels |
 
 `forkOwner` is the repository's `fork` (`scripts/config repo R fork`): the bot's
 login for `push: fork`, the repository's own owner for `push: branch`.
@@ -39,7 +40,8 @@ scripts/request           # send it, wait for the owner
 ```
 
 - **Use part**, in `GH_TOKEN`: `github-manager` for every repository,
-  `github-push` for `self` when it's set.
+  `github-push` for `self` when it's set. A sample run (`sample` true) adds
+  `github-sample-seed` and `github-push` for the sample repository.
 - **Delegate part**: every role named by the skill of a job that's on
   (`scripts/config jobs`), for every repository. A job that's off delegates nothing.
 

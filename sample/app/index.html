@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tip Split</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Split the bill</h1>
+
+    <label>Bill
+      <input id="bill" inputmode="decimal" value="50.00">
+    </label>
+
+    <fieldset>
+      <legend>Tip</legend>
+      <div class="tips">
+        <button type="button" data-tip="10">10%</button>
+        <button type="button" data-tip="15">15%</button>
+        <button type="button" data-tip="18">18%</button>
+        <button type="button" data-tip="2">20%</button>
+      </div>
+      <input id="custom" inputmode="decimal" placeholder="Custom %">
+    </fieldset>
+
+    <label>People
+      <input id="people" type="number" min="0" value="3">
+    </label>
+
+    <dl class="result">
+      <dt>Tip</dt><dd id="tip"></dd>
+      <dt>Total</dt><dd id="total"></dd>
+      <dt>Each person pays</dt><dd id="each" class="big"></dd>
+    </dl>
+  </main>
+  <script src="tip.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+{
+  "configured": true,
+  "name": "Sample manager",
+  "owner": {
+    "github": "OWNER",
+    "email": "EMAIL"
+  },
+  "self": "",
+  "upstream": "discobox-ai/factory",
+  "github": {
+    "actor": "owner",
+    "login": "OWNER"
+  },
+  "repos": [
+    {
+      "name": "OWNER/REPO",
+      "base": "main",
+      "access": "admin",
+      "push": "branch"
+    }
+  ],
+  "jobs": {
+    "triage": true,
+    "design": false,
+    "deliver": true,
+    "fix-ci": false,
+    "rebase": false,
+    "adhoc": false,
+    "prototype": false
+  },
+  "auto": [
+    "triage",
+    "deliver"
+  ],
+  "onboarding": false,
+  "deliver": {
+    "review": false,
+    "verify": true
+  },
+  "design": {
+    "artifact": "",
+    "name": "",
+    "path": ""
+  },
+  "labels": {
+    "new": null,
+    "status": {
+      "triaged": "triaged",
+      "needsDecision": "needs decision",
+      "needsInput": "needs input",
+      "ready": "ready",
+      "inProgress": "in progress",
+      "inReview": "in review",
+      "blocked": "blocked"
+    },
+    "priority": [
+      "P1",
+      "P2",
+      "P3"
+    ],
+    "autoReadyMax": "P1",
+    "flake": null,
+    "design": null,
+    "blocker": []
+  },
+  "backlog": {
+    "mode": "ignore",
+    "before": "BEFORE"
+  },
+  "focus": {
+    "milestone": ""
+  },
+  "workers": {
+    "harness": "claude-code",
+    "max": 1,
+    "triageMax": 1,
+    "pauseAfter": "5m",
+    "paused": false,
+    "pausedExcept": []
+  },
+  "disk": {
+    "minFreeGiB": 30
+  },
+  "sample": true
+}

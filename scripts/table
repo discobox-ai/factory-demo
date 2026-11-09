@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""Edit the manager's status table, the file the manager-table mod draws.
+
+Rows are keyed: an issue ("460" in the first repository of manager.json,
+"api 33" in another, by its name), or a PR ("pr 411", "pr api 31") for a row
+with no issue, or a name for anything else ("finished").
+
+  table set KEY field=value ...    update a row (adds it, at the end, if missing)
+  table add KEY [--at N|--before KEY] field=value ...
+  table rm KEY ...                 remove rows
+  table move KEY --at N|--before KEY
+  table show                       the rows, one per line
+  table slots                      refresh the slot list (running workers) from discobox ls
+  table rank [KEY ...]             re-read each row's labels and milestone from GitHub
+                                   (all rows, or the KEYs) and re-sort the table
+
+Fields: item agent issue pr doing move why blocker ("move" is "Your move"; "–" is
+none; blocker=yes puts a row in group 1 when no label says so, e.g. broken CI).
+Every write is atomic (a temp file, then a rename) and stamps postedAt.
+
+Ranking (docs/labels.md, Next up). Every write sorts the rows by group, then
+priority, keeping the current order among equals, so the order can't drift:
+  1 Blocker      the repo's flake label or a labels.blocker label, or blocker=yes
+  2 <focus>      in the milestone focus.milestone names (if set), in any repository
+  3 Other        everything else that is open
+  4 Done         closed issues and merged or closed PRs
+Priority within a group: the repo's labels.priority, highest first, then none.
+`rank` stores each row's group and priority (fields `group`, `prio`) and
+rewrites `why` as "<group> <name> (<priority>)"; a new row with an issue or PR
+key is ranked when it's added.
+"""
+import json
+import re, os, sys, time
+
+PATH = os.path.expanduser(os.environ.get("MANAGER_TABLE", "~/.local/state/manager/table.json"))
+FIELDS = {"item": "item", "agent": "agent", "issue": "issue", "pr": "pr", "doing": "doing", "move": "yourMove", "yourMove": "yourMove", "why": "why", "blocker": "blocker"}
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+
+
+def config():
+    """manager.json: {repos: [names], default: first repo, short: {name: owner/name}, focus, labels per repo}."""
+    import subprocess
+    c = json.load(open(os.path.join(ROOT, "manager.json")))
+    repos = [r["name"] for r in c.get("repos", [])]
+    labels = {}
+    for r in repos:
+        out = subprocess.run([os.path.join(ROOT, "scripts", "config"), "repo", r], capture_output=True, text=True)
+        labels[r] = json.loads(out.stdout)["labels"] if out.returncode == 0 else c["labels"]
+    return {"repos": repos, "default": repos[0] if repos else "",
+            "short": {r.split("/")[1]: r for r in repos},
+            "focus": (c.get("focus") or {}).get("milestone", ""),
+            "max": (c.get("workers") or {}).get("max", 4), "labels": labels}
+
+
+CFG = None
+
+
+def cfg():
+    global CFG
+    if CFG is None:
+        CFG = config()
+    return CFG
+
+
+def short(repo):
+    """How the table names a repository: "" for the first one, else its name."""
+    return "" if repo == cfg()["default"] else repo.split("/")[-1]
+
+
+def load():
+    try:
+        with open(PATH) as f:
+            d = json.load(f)
+    except FileNotFoundError:
+        d = {}
+    d.setdefault("rows", [])
+    d.setdefault("links", [])
+    for r in d["rows"]:
+        # A bare PR number takes its issue's repository ("vm 49" → PR "vm 52").
+        iss, pr = str(r.get("issue", "-")), str(r.get("pr", "-"))
+        m = re.match(r"^([a-z][\w.-]*) \d+$", iss)
+        if m and re.match(r"^\d+$", pr):
+            r["pr"] = f"{m.group(1)} {pr}"
+        k = r.get("key", "")
+        if r.get("issue", "-") in ("-", "") and ISSUE_KEY.match(k) and not k.startswith("pr "):
+            r["issue"] = k
+    return d
+
+
+def save(d):
+    d["postedAt"] = int(time.time() * 1000)
+    os.makedirs(os.path.dirname(PATH), exist_ok=True)
+    tmp = PATH + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=1)
+    os.replace(tmp, PATH)
+
+
+def key_of(r):
+    if r.get("key"):
+        return r["key"]
+    if r.get("issue") not in (None, "", "-"):
+        return r["issue"]
+    if r.get("pr") not in (None, "", "-"):
+        return "pr " + r["pr"]
+    return r.get("item", "")
+
+
+def find(rows, key):
+    for i, r in enumerate(rows):
+        if key_of(r) == key:
+            return i
+    return -1
+
+
+def parse(args):
+    out, pos = {}, {}
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--at", "--before"):
+            pos[a] = args[i + 1]
+            i += 2
+            continue
+        k, sep, v = a.partition("=")
+        if not sep or k not in FIELDS:
+            sys.exit(f"table: bad field {a!r} (fields: {', '.join(sorted(set(FIELDS) - {'yourMove'}))})")
+        if FIELDS[k] in ("issue", "pr"):
+            v = norm_ref(v)
+        out[FIELDS[k]] = v
+        i += 1
+    return out, pos
+
+
+def norm_ref(v):
+    """An issue or PR field in one form the renderers read: "677" for the first
+    repository, "<name> <N>" for any other. Accepts "#677", "web#677",
+    "acme/api#46", "api#46", "api 46"; anything else is kept as given."""
+    t = v.strip()
+    m = re.match(r"^(?:[\w.-]+/)?([A-Za-z][\w.-]*?)?\s*#?\s*(\d+)$", t)
+    if not m:
+        return v
+    repo, num = m.group(1), m.group(2)
+    if not repo or repo in ("", cfg()["default"].split("/")[-1]):
+        return num
+    return f"{repo} {num}"
+
+
+def place(rows, row, pos):
+    if "--at" in pos:
+        rows.insert(max(0, int(pos["--at"]) - 1), row)
+    elif "--before" in pos and find(rows, pos["--before"]) >= 0:
+        rows.insert(find(rows, pos["--before"]), row)
+    else:
+        rows.append(row)
+
+
+def blank(key):
+    r = {f: "-" for f in ("item", "agent", "issue", "pr", "doing", "why")}
+    r["yourMove"] = "–"
+    r["key"] = key
+    if ISSUE_KEY.match(key):
+        r["issue"] = key
+    return r
+
+
+# An issue key: "460", or "api 33" for another repository.
+ISSUE_KEY = re.compile(r"^(?:[a-z][\w.-]* )?\d+$")
+
+
+def slots():
+    """Running workers this box created, for the header: {max, boxes: [{id, label}]}."""
+    import subprocess
+    out = subprocess.run(["discobox", "ls", "-o", "json"], capture_output=True, text=True, check=True).stdout
+    me = json.load(open(os.path.expanduser("~/.discobox/meta.json"))).get("id") if os.path.exists(os.path.expanduser("~/.discobox/meta.json")) else None
+    boxes = []
+    for b in json.loads(out).get("sandboxes", []):
+        tags = (b.get("meta") or {}).get("tags") or {}
+        state = (b.get("runtime") or {}).get("runtimeState")
+        if not tags.get("job") or state not in ("running", "starting"):
+            continue
+        if me and b.get("createdBySandboxId") not in (None, me):
+            continue
+        repo = short(tags.get("repo", ""))
+        ref = " ".join(x for x in (repo, tags.get("issue") or "") if x)
+        label = f"{ref or tags.get('repo', '').split('/')[-1]} {tags['job']}".strip()
+        boxes.append({"id": b["id"], "label": label})
+    return {"max": cfg()["max"], "boxes": boxes}
+
+
+# --- ranking ------------------------------------------------------------------
+
+def target(r):
+    """The GitHub issue or PR a row is about, as (owner/repo, number), or None."""
+    full = lambda name: cfg()["short"].get(name, name) if name else cfg()["default"]
+    for field in ("issue", "pr"):
+        v = str(r.get(field, "-"))
+        m = re.match(r"^(?:([a-z][\w.-]*) )?(\d+)$", v)
+        if m:
+            return (full(m.group(1)), m.group(2))
+    m = re.match(r"^(?:([a-z][\w.-]*) )?pr (\d+)$|^pr (?:([a-z][\w.-]*) )?(\d+)$", key_of(r))
+    if m:
+        name, num = (m.group(1), m.group(2)) if m.group(2) else (m.group(3), m.group(4))
+        return (full(name), num)
+    return None
+
+
+def fetch(repo, num):
+    import subprocess
+    out = subprocess.run(["gh", "api", f"repos/{repo}/issues/{num}", "--jq",
+                          "{state, milestone: (.milestone.title // \"\"), labels: [.labels[].name]}"],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        return None
+    return json.loads(out.stdout)
+
+
+def classify(r, info, repo):
+    c = cfg()
+    lab = c["labels"].get(repo) or {}
+    prios = lab.get("priority") or []
+    names = {1: "Blocker", 2: c["focus"] or "Focus", 3: "Other", 4: "Done"}
+    labels = info.get("labels", []) if info else []
+    prio = next((p for p in prios if p in labels), "none")
+    blockers = set(lab.get("blocker") or []) | ({lab["flake"]} if lab.get("flake") else set())
+    if info and info.get("state") == "closed":
+        g = 4
+    elif blockers & set(labels) or str(r.get("blocker", "")).lower() in ("yes", "true", "1"):
+        g = 1
+    elif info and c["focus"] and info.get("milestone") == c["focus"]:
+        g = 2
+    else:
+        g = 3
+    rank_ = prios.index(prio) if prio in prios else len(prios)
+    return g, rank_, f"{g} {names[g]} ({prio})"
+
+
+def rank(rows, keys=None):
+    from concurrent.futures import ThreadPoolExecutor
+    todo = [r for r in rows if keys is None or key_of(r) in keys]
+    targets = [target(r) for r in todo]
+    with ThreadPoolExecutor(8) as ex:
+        infos = list(ex.map(lambda t: fetch(*t) if t else None, targets))
+    for r, t, info in zip(todo, targets, infos):
+        if info is None and t:
+            continue  # GitHub didn't answer: keep what the row had
+        g, prio, why = classify(r, info, t[0] if t else cfg()["default"])
+        r["group"], r["prio"], r["why"] = g, prio, why
+
+
+def sort_rows(rows):
+    """Stable: by group, then priority (an index into the repo's labels.priority);
+    rows never ranked count as group 3, unprioritised."""
+    def k(r):
+        g = r.get("group", 3)
+        p = r.get("prio", 99)
+        return (g if isinstance(g, int) else 3, p if isinstance(p, int) else 99)
+    rows.sort(key=k)
+
+
+def main(argv):
+    if len(argv) < 2 or argv[1] in ("-h", "--help"):
+        print(__doc__)
+        return
+    cmd, args = argv[1], argv[2:]
+    d = load()
+    rows = d["rows"]
+    if cmd == "show":
+        for n, r in enumerate(rows, 1):
+            print(f"{n:2} {key_of(r):14} | {r.get('yourMove','–'):24} | {r.get('doing','')[:50]} | {r.get('item','')[:50]}")
+        return
+    if cmd in ("set", "add"):
+        key, (fields, pos) = args[0], parse(args[1:])
+        i = find(rows, key)
+        if i < 0:
+            row = blank(key)
+            row.update(fields)
+            place(rows, row, pos)
+            rank(rows, {key})
+        else:
+            rows[i].update(fields)
+            rows[i].setdefault("key", key)
+            if pos:
+                place(rows, rows.pop(i), pos)
+            if "blocker" in fields or "issue" in fields or "pr" in fields:
+                rank(rows, {key})
+    elif cmd == "rm":
+        d["rows"] = [r for r in rows if key_of(r) not in set(args)]
+    elif cmd == "move":
+        key, (_, pos) = args[0], parse(args[1:])
+        i = find(rows, key)
+        if i < 0:
+            sys.exit(f"table: no row {key!r}")
+        place(rows, rows.pop(i), pos)
+    elif cmd == "slots":
+        d["slots"] = slots()
+    elif cmd == "rank":
+        rank(rows, set(args) or None)
+    else:
+        sys.exit(f"table: unknown command {cmd!r}")
+    sort_rows(d["rows"])
+    # The side pane builds links from these (owner/name for "" and each short name).
+    d["repos"] = {"": cfg()["default"], **cfg()["short"]}
+    save(d)
+
+
+if __name__ == "__main__":
+    main(sys.argv)

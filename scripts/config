@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Read manager.json (docs/config.md). Every script and skill reads the
+# configuration through this, so a repository's label overrides are applied
+# the same way everywhere.
+#
+#   scripts/config get PATH               a top-level value, e.g. workers.harness
+#   scripts/config repos                  every watched repository, one per line
+#   scripts/config repo REPO              that repository's entry, labels merged (JSON)
+#   scripts/config repo REPO FIELD        one field of it: base, push, fork, access
+#   scripts/config label REPO CONCEPT     the label a concept maps to in REPO,
+#                                         e.g. ready, inProgress, flake, new (empty: the
+#                                         repository has none; scripts/status keeps it
+#                                         in a comment instead)
+#   scripts/config labels REPO            every label REPO's concepts map to, one per line
+#   scripts/config jobs                   every job: its name, its worker skill, on|off
+#   scripts/config on JOB                 exit 0 if the job is on (manager.json jobs)
+#   scripts/config auto JOB               exit 0 if the manager may act for the job
+#                                         without asking first (manager.json auto)
+#   scripts/config job SKILL              the job a worker skill does (its frontmatter's
+#                                         metadata.discobox.job, which is also its box's
+#                                         job tag)
+#   scripts/config role SKILL             the role it's bound (metadata.discobox.role)
+#   scripts/config check                  refuse an unconfigured or inconsistent file
+set -euo pipefail
+cd "$(dirname "$0")/.."
+F=manager.json
+die() { echo "config: $*" >&2; exit 1; }
+[ -f "$F" ] || die "no manager.json"
+
+# A repository's entry with the top-level labels merged under its own
+# (status merged key by key, everything else replaced), and `fork`: where its
+# workers push (the bot's fork, or the repository itself).
+REPO_JQ='
+  def entry($r): (.repos[] | select(.name == $r)) // error("\($r) is not in manager.json repos");
+  def merged($r): . as $c | entry($r) as $e
+    | $e + {labels: ($c.labels + ($e.labels // {})
+                     | .status = ($c.labels.status + (($e.labels // {}).status // {})))}
+    | .fork = (if .push == "fork" then $c.github.login else ($r | split("/")[0]) end);'
+
+# A worker skill's frontmatter field: meta SKILL KEY.
+meta() {
+  [ -f "worker-skills/$1/SKILL.md" ] || die "no worker skill worker-skills/$1"
+  sed -n '/^---$/,/^---$/p' "worker-skills/$1/SKILL.md" | sed -n "s/^ *discobox\.$2: *//p" | head -1
+}
+on() { [ "$(jq -r --arg j "$1" '.jobs[$j] // false' $F)" = true ]; }
+
+case ${1:-} in
+  jobs)
+    for d in worker-skills/*/; do
+      s=$(basename "$d"); j=$(meta "$s" job)
+      [ -z "$j" ] || printf '%-10s %-16s %s\n' "$j" "$s" "$(on "$j" && echo on || echo off)"
+    done ;;
+  on)   on "${2:?JOB}" ;;
+  auto) jq -e --arg j "${2:?JOB}" '(.auto // []) | index($j) != null' $F >/dev/null ;;
+  job)  meta "${2:?SKILL}" job ;;
+  role) meta "${2:?SKILL}" role ;;
+  get)    jq -r --arg p "${2:?PATH}" 'getpath($p | split(".")) | if type == "array" then .[] elif . == null then empty else . end' $F ;;
+  repos)  jq -r '.repos[].name' $F ;;
+  repo)
+    if [ -n "${3:-}" ]; then
+      jq -r --arg r "$2" --arg f "$3" "$REPO_JQ"' merged($r)[$f] // empty' $F
+    else
+      jq --arg r "${2:?REPO}" "$REPO_JQ"' merged($r)' $F
+    fi ;;
+  label)
+    jq -r --arg r "${2:?REPO}" --arg c "${3:?CONCEPT}" "$REPO_JQ"'
+      merged($r).labels | (.status[$c] // .[$c]) | if type == "string" then . else empty end' $F ;;
+  labels)
+    jq -r --arg r "${2:?REPO}" "$REPO_JQ"'
+      merged($r).labels | ([.new, .flake, .design] + (.status | [.[]]) + .priority + .blocker)
+      | map(select(type == "string" and . != "")) | unique[]' $F ;;
+  check)
+    jq -e '.configured == true' $F >/dev/null || die "manager.json is not configured yet: run /setup"
+    jq -r '
+      def need($v; $m): if ($v // "") == "" then $m else empty end;
+      need(.self; "self is empty"),
+      need(.github.login; "github.login is empty"),
+      (if (.repos | length) == 0 then "no repos" else empty end),
+      (.repos[] | need(.base; "\(.name): no base"), (if (.push | IN("fork", "branch")) then empty else "\(.name): push must be fork or branch" end)),
+      (if ([.jobs[]] | any) then empty else "no job is on (jobs)" end),
+      (if .jobs.design and (.design.artifact | IN("file", "issue") | not)
+        then "jobs.design is on: design.artifact must be file or issue" else empty end),
+      (if .jobs.design and .design.artifact == "file" and (.design.path // "") == ""
+        then "design.artifact is file: design.path is empty" else empty end),
+      (.labels as $l | if $l.autoReadyMax != null and ($l.priority | index($l.autoReadyMax)) == null
+        then "labels.autoReadyMax is not one of labels.priority" else empty end)' $F | {
+      bad=0; while read -r l; do echo "config: $l" >&2; bad=1; done
+      known=$("$0" jobs | awk '{print $1}')
+      for j in $(jq -r '(.jobs | keys[]), (.auto // [])[]' $F | sort -u); do
+        printf '%s\n' "$known" | grep -qx "$j" || { echo "config: $j (in jobs or auto): no worker skill does that job (scripts/config jobs)" >&2; bad=1; }
+      done
+      exit $bad; } ;;
+  *) die "usage: scripts/config get|repos|repo|label|labels|jobs|on|auto|job|role|check …" ;;
+esac

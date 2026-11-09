@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Build the manager's one GitHub access request from manager.json and the
+# worker skills' roles, and send it (roles/README.md). Never edited by hand:
+# a repository or role left out of a request is access lost, so it is always
+# generated whole.
+#
+#   scripts/request --print         print the request JSON, send nothing
+#   scripts/request                 send it and wait for the owner
+#   scripts/request --setup         what /setup needs before the manager is
+#                                   configured: read REPOS ("a/b c/d"), and create
+#                                   (CREATE: user, org:OWNER, fork, or empty for a
+#                                   repository that exists) and push SELF, the
+#                                   manager's own repository
+set -euo pipefail
+cd "$(dirname "$0")/.."
+die() { echo "request: $*" >&2; exit 1; }
+MODE=${1:-send}
+
+if [ "$MODE" = --setup ]; then
+  repos=${REPOS:-$(scripts/config repos)}
+  SELF=${SELF:-$(scripts/config get self)}
+  UPSTREAM=$(scripts/config get upstream)
+  [ -n "$repos" ] || die "no repositories: set REPOS"
+  [ -n "$SELF" ] || die "no manager repository: set SELF"
+  routes=$(for r in $repos; do
+    printf '"GET api.github.com/repos/%s,/repos/%s/**"\n' "$r" "$r"
+    printf '"GET,POST github.com/%s.git/info/refs,/%s.git/git-upload-pack"\n' "$r" "$r"
+  done
+  echo '"api.github.com/graphql graphql=query"'
+  echo '"GET api.github.com/user,/search/issues"'
+  printf '"GET api.github.com/repos/%s,/repos/%s/**"\n' "$SELF" "$SELF"
+  printf '"github.com/%s.git/**"\n' "$SELF"
+  case ${CREATE:-} in
+    user) echo '"POST api.github.com/user/repos"' ;;
+    org:*) printf '"POST api.github.com/orgs/%s/repos"\n' "${CREATE#org:}" ;;
+    fork) [ -n "$UPSTREAM" ] || die "CREATE=fork needs upstream in manager.json"
+          printf '"POST api.github.com/repos/%s/forks"\n' "$UPSTREAM" ;;
+    "") ;;
+    *) die "CREATE is user, org:OWNER, fork or empty" ;;
+  esac)
+  jq -n --argjson routes "[$(echo "$routes" | paste -sd,)]" --arg who "$(echo $repos | sed 's/ /, /g')" --arg self "$SELF" --arg c "${CREATE:-}" '{
+    name: "github", envVar: "GH_TOKEN", routes: $routes, grantTTLSeconds: 14400, wait: true,
+    justification: "Set up the manager: \(if $c != "" then "create \($self) and " else "" end)push its settings to \($self); read \($who | gsub("\n"; ", ")) (their labels, issues and permissions), read-only."}' |
+    if [ -n "${PRINT:-}" ]; then cat; else discobox-access request --json; fi
+  exit
+fi
+
+scripts/config check
+SELF=$(scripts/config get self)
+LOGIN=$(scripts/config get github.login)
+
+# Roles the skills of the jobs that are on name, once each (none: bound
+# nothing, asks the owner). A job that's off gets no delegation.
+ROLES=$(scripts/config jobs | awk '$3 == "on" {print $2}' | while read -r s; do
+  scripts/config role "$s"
+done | sort -u | grep -vx none || true)
+for r in $ROLES; do [ -f "roles/$r.json" ] || die "a worker skill names roles/$r.json, which doesn't exist"; done
+
+pol() { # pol FILE OWNER REPO [FORK]: one policy entry
+  jq -cn --arg f "roles/$1.json" --arg o "$2" --arg r "$3" --arg k "${4:-}" \
+    '{file: $f, args: ({owner: $o, repo: $r} + (if $k != "" then {forkOwner: $k} else {} end))}'
+}
+takes_fork() { jq -e '.parameters | has("forkOwner")' "roles/$1.json" >/dev/null; }
+
+use=() delegate=()
+for repo in $(scripts/config repos); do
+  o=${repo%%/*} n=${repo#*/}
+  use+=("$(pol github-manager "$o" "$n")")
+  fork=$(scripts/config repo "$repo" fork)
+  for role in $ROLES; do
+    if takes_fork "$role"; then delegate+=("$(pol "$role" "$o" "$n" "$fork")")
+    else delegate+=("$(pol "$role" "$o" "$n")"); fi
+  done
+done
+use+=("$(pol github-push "${SELF%%/*}" "${SELF#*/}")")
+
+total=$(( ${#use[@]} + ${#delegate[@]} ))
+[ "$total" -le 32 ] || die "$total policies: a request holds at most 32. Watch fewer repositories, or turn off jobs whose role nothing else uses"
+
+REQ=$(jq -n --argjson use "[$(IFS=,; echo "${use[*]}")]" --argjson del "[$(IFS=,; echo "${delegate[*]}")]" \
+  --arg who "$(scripts/config repos | paste -sd, | sed 's/,/, /g')" --arg login "$LOGIN" \
+  --arg roles "$(echo $ROLES | sed 's/ /, /g')" '{
+  name: "github", envVar: "GH_TOKEN", policies: $use, delegate: {policies: $del}, wait: true,
+  justification: "The manager, acting as \($login): watch, label and comment on \($who) and push its own repository; hand its workers their roles (\($roles)) in each. No merge."}')
+
+if [ "$MODE" = --print ]; then echo "$REQ"; exit; fi
+echo "$REQ" | discobox-access request --json

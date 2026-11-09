@@ -1,0 +1,1 @@
+{ "name": "manager-table", "version": "0.1.0", "description": "The manager's status table in a side pane, and the owner's next move in the status line", "types": "./types/index.d.ts" }

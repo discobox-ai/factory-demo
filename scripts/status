@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# An issue's status (docs/labels.md): read it, or move it. The one way the
+# manager reads or changes a status, so a repository with no label for a
+# status still keeps it in GitHub.
+#
+#   scripts/status check REPO          the repository's labels, and the label each
+#                                      concept maps to: mapped, (none: kept in the
+#                                      status comment), or MISSING when manager.json
+#                                      names a label the repository doesn't have (a
+#                                      typo: nothing moves there until it's fixed)
+#   scripts/status get REPO N          the status concept: new, triaged, needsDecision,
+#                                      needsInput, ready, inProgress, inReview, blocked
+#   scripts/status set REPO N CONCEPT [NOTE]
+#                                      move it: the concept's label if the repository
+#                                      maps one (removing the other status labels), and
+#                                      the manager's status comment, created only when
+#                                      the concept has no label, edited in place after
+#
+# Where a status comes from: a mapped status label on the issue wins (the owner
+# may set one by hand); else the manager's status comment (the one starting
+# with the marker below, by github.login); else new.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+die() { echo "status: $*" >&2; exit 1; }
+CMD=${1:-} REPO=${2:-} N=${3:-}
+if [ "$CMD" = check ]; then
+  [ -n "$REPO" ] || die "usage: scripts/status check REPO"
+  have=$(gh api "repos/$REPO/labels?per_page=100" --paginate --jq '.[].name')
+  has() { printf '%s\n' "$have" | grep -qxF "$1"; }
+  echo "## $REPO: labels it has"
+  gh api "repos/$REPO/labels?per_page=100" --paginate --jq '.[] | "  \(.name)\t\(.description // "")"'
+  echo "## concepts → labels"
+  for c in new triaged needsDecision needsInput ready inProgress inReview blocked flake design; do
+    l=$(scripts/config label "$REPO" "$c")
+    if [ -z "$l" ]; then printf '  %-14s (none: kept in the status comment)\n' "$c"
+    elif has "$l"; then printf '  %-14s %s\n' "$c" "$l"
+    else printf '  %-14s %s  MISSING\n' "$c" "$l"; fi
+  done
+  scripts/config repo "$REPO" | jq -r '.labels.priority[]' | while read -r l; do
+    if has "$l"; then printf '  %-14s %s\n' priority "$l"; else printf '  %-14s %s  MISSING\n' priority "$l"; fi
+  done
+  exit 0
+fi
+[ -n "$N" ] || die "usage: scripts/status check REPO | get|set REPO N [CONCEPT [NOTE]]"
+MARK='<!-- manager:status -->'
+CONCEPTS="triaged needsDecision needsInput ready inProgress inReview blocked"
+LOGIN=$(scripts/config get github.login)
+
+labels_on() { gh api "repos/$REPO/issues/$N" --jq '.labels[].name'; }
+comment() { # id<TAB>concept of the manager's status comment, if any
+  gh api "repos/$REPO/issues/$N/comments?per_page=100" --paginate |
+    jq -rs --arg m "$MARK" --arg u "$LOGIN" 'add // [] | .[]
+      | select(.user.login == $u and (.body | startswith($m)))
+      | [.id, ((.body | capture("status: `(?<c>[A-Za-z]+)`").c) // "")] | @tsv' | tail -1
+}
+
+case $CMD in
+  get)
+    on=$(labels_on)
+    for c in $CONCEPTS; do
+      l=$(scripts/config label "$REPO" "$c")
+      [ -n "$l" ] && printf '%s\n' "$on" | grep -qxF "$l" && { echo "$c"; exit 0; }
+    done
+    c=$(comment | cut -f2)
+    echo "${c:-new}" ;;
+  set)
+    C=${4:-}; NOTE=${5:-}
+    case " $CONCEPTS " in *" $C "*) ;; *) die "unknown status $C (one of: $CONCEPTS)" ;; esac
+    l=$(scripts/config label "$REPO" "$C")
+    # Adding a label GitHub doesn't have creates it: refuse a mapping typo.
+    if [ -n "$l" ] && ! gh api "repos/$REPO/labels/$(jq -rn --arg s "$l" '$s|@uri')" --silent 2>/dev/null; then
+      die "$REPO has no label '$l' (manager.json maps $C to it): fix the mapping; the manager never creates labels"
+    fi
+    on=$(labels_on)
+    for c in $CONCEPTS; do
+      l=$(scripts/config label "$REPO" "$c")
+      [ -n "$l" ] && [ "$c" != "$C" ] && printf '%s\n' "$on" | grep -qxF "$l" &&
+        gh api -X DELETE "repos/$REPO/issues/$N/labels/$(jq -rn --arg s "$l" '$s|@uri')" --silent
+    done
+    l=$(scripts/config label "$REPO" "$C")
+    new=$(scripts/config label "$REPO" new)
+    [ -n "$new" ] && printf '%s\n' "$on" | grep -qxF "$new" &&
+      gh api -X DELETE "repos/$REPO/issues/$N/labels/$(jq -rn --arg s "$new" '$s|@uri')" --silent
+    [ -z "$l" ] || gh api -X POST "repos/$REPO/issues/$N/labels" -f "labels[]=$l" --silent
+    body="$MARK
+**Manager status:** \`$C\`${NOTE:+ — $NOTE}
+
+<sub>Kept by the manager, edited in place. status: \`$C\`</sub>"
+    id=$(comment | cut -f1)
+    if [ -n "$id" ]; then
+      gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" --silent
+    elif [ -z "$l" ]; then
+      gh api -X POST "repos/$REPO/issues/$N/comments" -f body="$body" --silent
+    fi
+    echo "$REPO#$N: $C${l:+ (label $l)}" ;;
+  *) die "usage: scripts/status get|set REPO N [CONCEPT [NOTE]]" ;;
+esac

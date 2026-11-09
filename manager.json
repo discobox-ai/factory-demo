@@ -1,0 +1,70 @@
+{
+  "configured": false,
+  "name": "Manager",
+  "owner": {
+    "github": "",
+    "email": ""
+  },
+  "self": "",
+  "upstream": "discobox-ai/factory",
+  "github": {
+    "actor": "",
+    "login": ""
+  },
+  "repos": [],
+  "jobs": {
+    "triage": false,
+    "design": false,
+    "deliver": false,
+    "fix-ci": false,
+    "rebase": false,
+    "adhoc": false,
+    "prototype": false
+  },
+  "auto": [],
+  "onboarding": true,
+  "deliver": {
+    "review": false,
+    "verify": false
+  },
+  "design": {
+    "artifact": "",
+    "name": "",
+    "path": ""
+  },
+  "labels": {
+    "new": null,
+    "status": {
+      "triaged": null,
+      "needsDecision": null,
+      "needsInput": null,
+      "ready": null,
+      "inProgress": null,
+      "inReview": null,
+      "blocked": null
+    },
+    "priority": [],
+    "autoReadyMax": null,
+    "flake": null,
+    "design": null,
+    "blocker": []
+  },
+  "backlog": {
+    "mode": "wait",
+    "before": ""
+  },
+  "focus": {
+    "milestone": ""
+  },
+  "workers": {
+    "harness": "claude-code",
+    "max": 4,
+    "triageMax": 2,
+    "pauseAfter": "5m",
+    "paused": false,
+    "pausedExcept": []
+  },
+  "disk": {
+    "minFreeGiB": 30
+  }
+}

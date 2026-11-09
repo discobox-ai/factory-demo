@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# Start one worker box for a job, the way the `workers` skill's Launch section says.
+#
+#   scripts/launch SKILL --repo OWNER/NAME [--issue N] [--job JOB] [-p PROMPT]
+#                  [--role ROLE] [--base BRANCH] [--no-source] [-i SOURCE]... [--no-label]
+#                  [--confirmed] [--dry-run]
+#
+# --confirmed: the owner said yes to this launch. Required unless the job is in
+# manager.json `auto` (docs/gates.md, Ask first); never pass it on your own.
+#
+# -i SOURCE brings an extra source into the box (repeat it), as `discobox run -i`
+# does: OWNER/REPO[@REF]. Only public repositories: from inside a box the CLI
+# lends no Git credentials, so a private one never arrives.
+#
+# The box starts from, and its PR targets, the repository's `base` in
+# manager.json, or --base.
+#
+# SKILL is a directory in worker-skills/ (deliver-issue, triage-issue, propose-design,
+# fix-ci, rebase-pr, submit, prototype), and its job (scripts/config jobs) must be on. It reads, from manager.json (scripts/config), the
+# harness, where the repository's workers push (`fork`) and its base branch; from
+# the skill, the role it runs under; from `discobox-access`, the one delegated
+# GitHub secret. It then runs the box, tags it, and moves the issue to
+# inProgress (scripts/status; deliver and design jobs).
+#
+# It refuses to launch when this checkout is dirty or not pushed (the box installs
+# its skills from the pushed main), or when workers.paused is true.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+die() { echo "launch: $*" >&2; exit 1; }
+
+SKILL="" REPO="" ISSUE="" JOB="" PROMPT="" ROLE="" NOSRC="" NOLABEL="" DRY="" BASEARG="" CONFIRMED="" INCLUDES=()
+[ $# -gt 0 ] || die "usage: scripts/launch SKILL --repo OWNER/NAME [--issue N] [--job JOB] [-p PROMPT] [--role ROLE] [--base BRANCH] [--no-source] [--no-label] [--dry-run]"
+SKILL=$1; shift
+while [ $# -gt 0 ]; do
+  case $1 in
+    --repo) REPO=$2; shift 2 ;;
+    --issue) ISSUE=$2; shift 2 ;;
+    --job) JOB=$2; shift 2 ;;
+    -p|--prompt) PROMPT=$2; shift 2 ;;
+    --role) ROLE=$2; shift 2 ;;
+    --base) BASEARG=$2; shift 2 ;;
+    -i|--include) INCLUDES+=("$2"); shift 2 ;;
+    --no-source) NOSRC=1; shift ;;
+    --no-label) NOLABEL=1; shift ;;
+    --confirmed) CONFIRMED=1; shift ;;
+    --dry-run) DRY=1; shift ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+[ -f "worker-skills/$SKILL/SKILL.md" ] || die "no worker skill worker-skills/$SKILL"
+[ -n "$REPO" ] || die "--repo is required"
+
+# --- manager.json -----------------------------------------------------------
+scripts/config check
+HARNESS=$(scripts/config get workers.harness)
+PAUSED=$(scripts/config get workers.paused)
+SELF=$(scripts/config get self)
+BRANCH=$(scripts/config repo "$REPO" base)
+FORK=$(scripts/config repo "$REPO" fork)
+[ -n "$HARNESS" ] || die "manager.json has no workers.harness"
+[ -n "$BRANCH" ] || die "$REPO is not in manager.json's repos"
+[ -z "$BASEARG" ] || BRANCH=$BASEARG
+if [ "$PAUSED" = true ] && ! scripts/config get workers.pausedExcept | grep -qx "$REPO#$ISSUE"; then
+  die "workers.paused is true in manager.json: no new boxes (pausedExcept names the exceptions, as OWNER/REPO#N)"
+fi
+OWNER=${REPO%%/*} NAME=${REPO#*/}
+
+# --- job, role, prompt ------------------------------------------------------
+# The job the skill does (its frontmatter) must be on in manager.json.
+JOBKEY=$(scripts/config job "$SKILL")
+[ -n "$JOBKEY" ] || die "worker-skills/$SKILL names no discobox.job"
+scripts/config on "$JOBKEY" || die "the $JOBKEY job is off in manager.json: the owner turns it on"
+[ -n "$JOB" ] || JOB=$JOBKEY
+# Ask first: a job not in `auto` launches only with the owner's yes.
+[ -n "$CONFIRMED" ] || [ -n "$DRY" ] || scripts/config auto "$JOBKEY" ||
+  die "the $JOBKEY job asks first (it isn't in manager.json auto): propose this launch to the owner, and pass --confirmed once they say yes"
+if [ -z "$ROLE" ]; then
+  ROLE=$(scripts/config role "$SKILL")
+fi
+[ -n "$ROLE" ] || die "worker-skills/$SKILL names no discobox.role; pass --role"
+# Role `none`: the box is bound nothing and asks the owner itself.
+[ "$ROLE" = none ] || [ -f "roles/$ROLE.json" ] || die "no roles/$ROLE.json"
+if [ -z "$PROMPT" ]; then
+  [ -n "$ISSUE" ] || die "give -p PROMPT, or --issue N for the default prompt"
+  case $SKILL in
+    deliver-issue) PROMPT="Deliver issue #$ISSUE in $REPO." ;;
+    triage-issue) PROMPT="Triage issue #$ISSUE in $REPO." ;;
+    propose-design) PROMPT="Propose the design for issue #$ISSUE in $REPO." ;;
+    *) die "no default prompt for $SKILL: give -p PROMPT" ;;
+  esac
+fi
+# The proxy judge clips a prompt at 256 bytes and reads the cut as hidden instructions.
+[ "$(printf %s "$PROMPT" | wc -c)" -le 256 ] || die "prompt is over 256 bytes; put the detail in the issue"
+
+# A role that pushes takes the fork; the triage role doesn't.
+PUSHES=1
+jq -e '.parameters | has("forkOwner")' "roles/$ROLE.json" >/dev/null 2>&1 || PUSHES=""
+
+# --- credentials ------------------------------------------------------------
+# The box's own DISCOBOX_* environment already reaches the right server; leave it alone.
+eval "$(discobox-access env)"
+GH_SECRET=$(discobox-access list -json | jq -r '[.credentials[] | select(.purpose == "delegate" and (.hosts | index("api.github.com"))) | .name] | if length == 1 then .[0] else "" end')
+[ -n "$GH_SECRET" ] || die "no single delegated GitHub credential (discobox-access list): launch nothing and tell the owner"
+
+# `discobox run` reads the repository and --skills with this box's git, which has no login.
+HELPER='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
+  GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1="$HELPER"
+
+# --- this checkout must be pushed -------------------------------------------
+[ -z "$(git status --porcelain)" ] || die "this checkout has uncommitted changes: commit and push first (workers install skills from the pushed main)"
+git fetch -q origin main
+[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "HEAD is not origin/main: push (or pull) first ($SELF)"
+
+BIND="$GH_SECRET:GH_TOKEN,policy=roles/$ROLE.json,owner=$OWNER,repo=$NAME${PUSHES:+,forkOwner=$FORK}"
+SRC="https://github.com/$REPO@$BRANCH"
+# Skills go in as a local directory, copied from this checkout (equal to the pushed
+# main, checked above). Given as OWNER/REPO//worker-skills, the pool fetches a
+# private repository itself, and from inside a box the CLI never lends it Git
+# credentials: the box waits for its source forever.
+ARGS=(run -d -H "$HARNESS" --skills "$PWD/worker-skills")
+[ "$ROLE" = none ] || ARGS+=(--bind "$BIND")
+if [ -n "$NOSRC" ]; then ARGS+=(--no-source); else ARGS+=("$SRC"); fi
+for inc in "${INCLUDES[@]}"; do
+  case $inc in */*) ARGS+=(-i "https://github.com/${inc}") ;; *) die "-i takes OWNER/REPO[@REF]" ;; esac
+done
+ARGS+=(-p "$PROMPT")
+
+if [ -n "$DRY" ]; then
+  echo "harness=$HARNESS job=$JOB role=$ROLE fork=${PUSHES:+$FORK} base=$BRANCH"
+  echo "discobox ${ARGS[*]}"
+  exit 0
+fi
+
+# --- launch -----------------------------------------------------------------
+OUT=$(discobox "${ARGS[@]}" 2>&1) || true
+echo "$OUT" | tail -3
+ID=$(echo "$OUT" | grep -o 'sbx_[a-z0-9]*' | head -1)
+[ -n "$ID" ] || die "no box ID in the output. A launch that errors can still make a box: look in 'discobox ls' before launching again"
+
+# --- tag, label -------------------------------------------------------------
+TAGS=(repo="$REPO" job="$JOB")
+[ -z "$ISSUE" ] || TAGS+=(issue="$ISSUE")
+[ -z "$PUSHES" ] || TAGS+=(fork="$FORK")
+TAGS+=(base="$BRANCH")
+# What the worker can't read from manager.json, it reads from its tags
+# (worker skill): whether deliver reviews and verifies, and where designs go.
+case $JOB in
+  deliver|fix-ci|adhoc|prototype)
+    TAGS+=(review="$(scripts/config get deliver.review)" verify="$(scripts/config get deliver.verify)") ;;
+esac
+case $JOB in
+  design|deliver|adhoc|prototype)
+    if scripts/config on design; then
+      TAGS+=(design="$(scripts/config get design.artifact)" design-name="$(n=$(scripts/config get design.name); echo "${n:-design}")")
+      [ -z "$(scripts/config get design.path)" ] || TAGS+=(design-path="$(scripts/config get design.path)")
+    else
+      TAGS+=(design=none)
+    fi ;;
+esac
+DESC=""
+if [ -n "$ISSUE" ]; then
+  TITLE=$(gh api "repos/$REPO/issues/$ISSUE" --jq .title 2>/dev/null || true)
+  DESC="${NAME}#${ISSUE}: ${TITLE}"
+fi
+discobox tag "$ID" "${TAGS[@]}" ${DESC:+--description "$DESC"} >/dev/null
+
+if [ -n "$ISSUE" ] && [ -z "$NOLABEL" ]; then
+  case $JOB in deliver|design)
+    scripts/status set "$REPO" "$ISSUE" inProgress "discobox:///$ID" >/dev/null ;;
+  esac
+fi
+
+# The table's "running" header counts workers from `discobox ls`; refresh it now.
+scripts/table slots >/dev/null 2>&1 || true
+
+echo "$ID"

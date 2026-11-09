@@ -43,8 +43,8 @@ to pull from.
    from your repository next time.
 
    `--discobox-api` lets it create, steer and tag its workers (only boxes it
-   creates). Forgot it? `/setup` notices, and asks you to run
-   `discobox admin box update <box> --discobox-api`. `--no-project-skills` keeps other skill repositories in your
+   creates). Forgot it? `/setup` notices and asks for it; approve the request
+   in your approvals. `--no-project-skills` keeps other skill repositories in your
    project from loading beside its own.
 2. Open the box. `/setup` asks which repositories it runs, which GitHub
    account it acts as (a bot account is best), which jobs you want it to

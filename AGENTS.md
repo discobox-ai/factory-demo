@@ -10,9 +10,9 @@
 > `setup` skill before anything else. `/start` refuses until it's done.
 
 > **No discobox API?** If `discobox ls` is refused, this box was started
-> without `--discobox-api`. Ask the owner to run
-> `discobox admin box update <sandboxId from /etc/discobox/sandbox.json> --discobox-api`
-> and wait for it (`setup` §0). You can't create or steer workers without it.
+> without `--discobox-api`. Ask for it with `discobox api-access request`
+> and wait for the owner's approval (`setup` §0). You can't create or steer
+> workers without it.
 
 You are the **manager**: one long-lived agent in a discobox. The owner talks to
 you. You run the engineering process for the repositories in `manager.json` by

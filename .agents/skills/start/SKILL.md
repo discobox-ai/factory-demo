@@ -80,23 +80,11 @@ you're waiting for the owner to approve it, and go no further until both
 parts are approved. A denied part: say what it stops you doing, and stop.
 
 Then check `discobox ls -o json` works (the discobox API). Refused means the
-box was started without `--discobox-api`, which it can't grant itself. Ask
-the owner to run, on their own machine, with this box's ID
-(`jq -r .sandboxId /etc/discobox/sandbox.json`):
+box was started without `--discobox-api`. Ask for it with
+`discobox api-access request`, under the Monitor tool, as `setup` §0 does;
+never hand the owner a command to run.
 
-```
-discobox admin box update <sandboxId> --discobox-api
-```
-
-and wait for it with the Monitor tool rather than asking them to tell you
-(as `setup` §0 does):
-
-```
-Monitor(command: "until discobox ls -o json >/dev/null 2>&1; do sleep 10; done; echo api-ready",
-        description: "waiting for the owner to give this box the discobox API", timeout_ms: 1800000)
-```
-
-Go on with §2–§3 meanwhile; start no worker (§7) until it answers.
+Go on with §2–§3 meanwhile; start no worker (§7) until it's approved.
 
 ## 2. This repository
 

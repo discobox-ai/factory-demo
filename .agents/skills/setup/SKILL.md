@@ -38,22 +38,20 @@ discobox ls -o json >/dev/null && echo "discobox API: yes"
 jq -r .sandboxId /etc/discobox/sandbox.json
 ```
 
-Refused means this box was started without `--discobox-api`. A box can't
-grant itself that, and `discobox-access` can't ask for it, so ask the owner
-directly, giving them the exact command with this box's ID, to run on their
-own machine:
+Refused means this box was started without `--discobox-api`. Ask for it
+yourself: `discobox api-access request` puts the request in the owner's
+approval inbox and waits for their answer. Never hand the owner a command
+to run. Wait on it with the Monitor tool rather than asking them to tell you:
 
 ```
-discobox admin box update <this box's sandboxId> --discobox-api
+Monitor(command: "discobox api-access request --reason 'the manager creates, tags and steers one worker discobox per job' 2>&1; echo exit=$?",
+        description: "waiting for the owner to approve this box's discobox API access", timeout_ms: 1800000)
 ```
 
-Then wait for it: watch with the Monitor tool until the API answers, rather
-than asking the owner to tell you.
-
-```
-Monitor(command: "until discobox ls -o json >/dev/null 2>&1; do sleep 10; done; echo api-ready",
-        description: "waiting for the owner to give this box the discobox API", timeout_ms: 1800000)
-```
+Say in one line that it's waiting in their approvals. `API access enabled`
+(exit 0) means approved. A denial (non-zero exit): tell the owner the
+manager can't start workers without it, and stop at §10 until they approve
+a new request.
 
 Go on to §1 meanwhile; nothing before §10 needs the API.
 

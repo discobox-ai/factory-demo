@@ -1,26 +1,28 @@
-# Manager starter template
+# Software factory demo
 
-An agent that runs engineering work across your GitHub repositories. It lives
-in one long-running discobox, watches your repositories, triages what comes
-in, starts a **worker discobox** per job (triage, design, deliver, fix CI,
+A software factory for your GitHub repositories, built on discobox. One
+agent, the **manager**, runs the factory's control loop: it lives in one
+long-running discobox, watches your repositories, triages what comes in,
+starts a **worker discobox** per job (triage, design, deliver, fix CI,
 rebase — whichever you turn on) and brings you only what needs you: a
-decision, a question in a box, a green PR to merge. You merge; it never does.
+decision, a question in a box, a green PR to merge. You merge; the factory
+never does.
 
 It fits how your repositories already work: it adopts the labels you have
 (and creates none), writes designs the way your team does (an ADR, an RFC, a
 comment on the issue, or not at all), and runs only the jobs you ask it to.
 
-This is a starter, not a framework. Start it from here and try it: its
-settings and skills live in the box's checkout, committed as they change, so
-nothing needs creating first. Once you want to keep it, fork this repository
-(or make an empty private one) and tell it the name; it pushes itself there,
-and from then on it's yours: when you change how you want it to work, tell
-it, and it edits its own skills and pushes them. There is no upstream to
-pull from.
+This is a demo to start from, not a framework. Start it from here and try
+it: its settings and skills live in the box's checkout, committed as they
+change, so nothing needs creating first. Once you want to keep it, fork this
+repository (or make an empty private one) and tell the manager the name; it
+pushes itself there, and from then on it's yours: when you change how you
+want it to work, tell it, and it edits its own skills and pushes them. There
+is no upstream to pull from.
 
 ## What's here
 
-- `AGENTS.md` (also `CLAUDE.md`): the manager itself.
+- `AGENTS.md` (also `CLAUDE.md`): the manager, the agent that runs the loop.
 - `manager.json`: your settings, written by `/setup` (`docs/config.md`).
 - `.agents/skills/`: the manager's skills (`setup`, `sample`, `start`,
   `watch`, `workers`, `table`, `github`, `triage-intake`, `adopt`).
@@ -34,7 +36,7 @@ pull from.
 
 ## Start it
 
-1. Start the manager's box from this repository:
+1. Start the factory's box from this repository; its agent is the manager:
 
    ```sh
    discobox run -d --discobox-api --no-project-skills \

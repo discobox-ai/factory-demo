@@ -38,7 +38,7 @@ pull from.
 
    ```sh
    discobox run -d --discobox-api --no-project-skills \
-     https://github.com/discobox-ai/factory@main -p '/setup'
+     https://github.com/discobox-ai/factory-demo@main -p '/setup'
    ```
 
    Nothing to fork or create first: the manager keeps its settings in the

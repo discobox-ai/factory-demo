@@ -6,7 +6,7 @@
     "email": "EMAIL"
   },
   "self": "",
-  "upstream": "discobox-ai/factory",
+  "upstream": "discobox-ai/factory-demo",
   "github": {
     "actor": "owner",
     "login": "OWNER"
